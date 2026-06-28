@@ -74,13 +74,9 @@
       <span class="label">Governor:</span>
       <select id="gov" onchange="render()"></select>
 
-      <span class="label">Show:</span>
+      <span class="label">Month:</span>
       <select id="period" onchange="render()">
-        <option value="0">All weeks</option>
-        <option value="1">Last 1 week</option>
-        <option value="2">Last 2 weeks</option>
-        <option value="3">Last 3 weeks</option>
-        <option value="4">Last 4 weeks</option>
+        <option value="all">All months</option>
       </select>
     </div>
 
@@ -102,6 +98,9 @@
   <script>
     var MODEL = null, chart = null;
 
+    var MONTH_NAMES = ['January','February','March','April','May','June',
+                       'July','August','September','October','November','December'];
+
     GLGC.load(function (model) {
       MODEL = model;
       var svc = document.getElementById('svc');
@@ -111,6 +110,22 @@
         o.value = S.service; o.textContent = S.service;
         svc.appendChild(o);
       });
+
+      // Build month options from the actual Sundays present in the sheet,
+      // so new months appear automatically as you fill them in.
+      var period = document.getElementById('period');
+      var seen = {};
+      model.weeks.forEach(function (w) {
+        var d = w.date instanceof Date ? w.date : new Date(w.date);
+        var key = d.getFullYear() + '-' + (d.getMonth() + 1);
+        if (seen[key]) return;
+        seen[key] = true;
+        var o = document.createElement('option');
+        o.value = key;
+        o.textContent = MONTH_NAMES[d.getMonth()] + ' ' + d.getFullYear();
+        period.appendChild(o);
+      });
+
       onSvc();
     }, function (e) {
       document.getElementById('leader').textContent = 'Could not load data';
@@ -264,8 +279,17 @@
         ? reported.filter(function (p) { return p.reporters > 0; })
         : reported;
 
-      var period = parseInt(document.getElementById('period').value, 10) || 0;
-      var pts = (period > 0) ? trimmed.slice(-period) : trimmed;
+      var period = document.getElementById('period').value;
+      var pts = trimmed;
+      if (period !== 'all') {
+        var parts = period.split('-');
+        var pickYear = parseInt(parts[0], 10);
+        var pickMonth = parseInt(parts[1], 10) - 1;
+        pts = trimmed.filter(function (p) {
+          var d = p.date instanceof Date ? p.date : new Date(p.date);
+          return d.getFullYear() === pickYear && d.getMonth() === pickMonth;
+        });
+      }
 
       document.getElementById('msg').style.display = pts.length ? 'none' : 'block';
 
