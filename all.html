@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GLGC Sunday Attendance — All Hubs</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="data.js"></script>
+  <style>
+    :root { --blue:#1f5fff; --gold:#e6c878; }
+    * { box-sizing: border-box; }
+    html, body { margin:0; background:#000; color:#fff; font-family:Arial, Helvetica, sans-serif; }
+    .wrap { max-width:1500px; margin:0 auto; padding:14px 22px 50px; }
+    .nav { display:flex; gap:10px; justify-content:center; margin-bottom:10px; flex-wrap:wrap; }
+    .nav a { color:#bbb; text-decoration:none; border:1px solid #333; border-radius:20px;
+      padding:7px 16px; font-size:14px; }
+    .nav a.active { background:var(--gold); color:#000; border-color:var(--gold); font-weight:bold; }
+    .title { text-align:center; font-family:Georgia,'Times New Roman',serif; color:var(--gold);
+      font-size:30px; letter-spacing:1px; margin:6px 0 2px; }
+    .sub { text-align:center; color:#bbb; font-size:16px; margin-bottom:6px; }
+    .topbar { display:flex; gap:12px; align-items:center; justify-content:center;
+      margin:8px 0; flex-wrap:wrap; }
+    .topbar .label { color:#999; font-size:13px; }
+    select { background:#111; color:#fff; border:1px solid #333; border-radius:8px;
+      padding:9px 14px; font-size:15px; }
+    .legend { display:flex; gap:34px; justify-content:center; margin:14px 0 4px;
+      color:#cfcfcf; font-size:16px; }
+    .legend span { display:inline-flex; align-items:center; gap:9px; }
+    .sw { width:26px; height:14px; border-radius:2px; display:inline-block; }
+    .chartbox { height:620px; margin-top:6px; }
+    .msg { text-align:center; color:#888; padding:50px; font-size:17px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="nav">
+      <a href="index.html">Per Hub</a>
+      <a href="all.html" class="active">All Hubs</a>
+      <a href="summary.html">Weekly Summary</a>
+    </div>
+
+    <div class="title">GLGC SUNDAY ATTENDANCE 2026</div>
+    <div class="sub" id="sub">All Hubs — loading…</div>
+
+    <div class="topbar">
+      <span class="label">Week:</span>
+      <select id="week" onchange="render()"></select>
+      <span class="label">Group by:</span>
+      <select id="grp" onchange="render()">
+        <option value="governor">Governor (every leader)</option>
+        <option value="choir">Choir (summed governors)</option>
+      </select>
+    </div>
+
+    <div class="legend">
+      <span><i class="sw" style="background:var(--blue)"></i> Sunday Attendance</span>
+    </div>
+
+    <div class="chartbox"><canvas id="chart"></canvas></div>
+    <div class="msg" id="msg" style="display:none">No submissions yet.</div>
+  </div>
+
+  <script>
+    var MODEL = null, chart = null;
+
+    GLGC.load(function (model) {
+      MODEL = model;
+      var sel = document.getElementById('week');
+      sel.innerHTML = '<option value="all">All weeks (running total)</option>';
+      model.weeks.forEach(function (w) {
+        var o = document.createElement('option');
+        o.value = w.week + '|' + w.dateLabel;
+        o.textContent = 'WK ' + w.week + ' · ' + w.dateLabel;
+        sel.appendChild(o);
+      });
+      // default to the most recent week with any data
+      var last = null;
+      for (var i = model.weeks.length - 1; i >= 0; i--) {
+        if (model.weeks[i].reporters > 0) { last = model.weeks[i]; break; }
+      }
+      if (last) sel.value = last.week + '|' + last.dateLabel;
+      else if (model.weeks.length) sel.value = model.weeks[model.weeks.length - 1].week + '|' +
+        model.weeks[model.weeks.length - 1].dateLabel;
+      else sel.value = 'all';
+      render();
+    }, function (e) {
+      document.getElementById('sub').textContent = 'Could not load data';
+      console.error(e);
+    });
+
+    function render() {
+      if (!MODEL) return;
+      var pick = document.getElementById('week').value;
+      var grp = document.getElementById('grp').value;
+      var rows = [], sub;
+
+      if (grp === 'governor') {
+        if (pick === 'all') {
+          MODEL.governors.forEach(function (G) {
+            if (G.total > 0) rows.push({ name: G.governor, sublabel: G.choir, value: G.total });
+          });
+          sub = 'All weeks running total · ' + rows.length + ' governors';
+        } else {
+          var wk = parseInt(pick.split('|')[0], 10);
+          var dateLabel = pick.split('|')[1];
+          MODEL.governors.forEach(function (G) {
+            var p = G.points.filter(function (x) { return x.week === wk; })[0];
+            if (p && p.attendance != null) {
+              rows.push({ name: G.governor, sublabel: G.choir, value: p.attendance });
+            }
+          });
+          sub = 'WK ' + wk + ' · ' + dateLabel + ' · ' + rows.length + ' governors reported';
+        }
+      } else { // choir
+        if (pick === 'all') {
+          MODEL.choirs.forEach(function (C) {
+            if (C.total > 0) rows.push({ name: C.choir, sublabel: C.service || '', value: C.total });
+          });
+          sub = 'All weeks running total · ' + rows.length + ' choirs';
+        } else {
+          var wk2 = parseInt(pick.split('|')[0], 10);
+          var dateLabel2 = pick.split('|')[1];
+          MODEL.choirs.forEach(function (C) {
+            var p = C.points.filter(function (x) { return x.week === wk2; })[0];
+            if (p && p.reporters > 0) {
+              rows.push({ name: C.choir, sublabel: C.service || '', value: p.attendance });
+            }
+          });
+          sub = 'WK ' + wk2 + ' · ' + dateLabel2 + ' · ' + rows.length + ' choirs reported';
+        }
+      }
+
+      rows.sort(function (a, b) { return b.value - a.value; });
+
+      var total = rows.reduce(function (s, r) { return s + r.value; }, 0);
+      sub += '  ·  ' + total + ' total attendance';
+      document.getElementById('sub').textContent = sub;
+      document.getElementById('msg').style.display = rows.length ? 'none' : 'block';
+
+      // Grow the chart height when there are many bars so labels stay readable.
+      var box = document.querySelector('.chartbox');
+      var horizontal = rows.length > 16;
+      box.style.height = horizontal
+        ? Math.max(500, rows.length * 26 + 120) + 'px'
+        : '620px';
+
+      var labels = rows.map(function (r) { return [r.name, r.sublabel]; });
+      var cfg = {
+        type: 'bar',
+        plugins: [GLGC.valueLabels],
+        data: {
+          labels: labels,
+          datasets: [
+            { label: 'Sunday Attendance', data: rows.map(function (r) { return r.value; }),
+              backgroundColor: '#1f5fff', borderRadius: 3, maxBarThickness: 44 }
+          ]
+        },
+        options: {
+          indexAxis: horizontal ? 'y' : 'x',
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: {
+              title: function (items) { return items[0].label.replace(',', '  —  '); }
+            } }
+          },
+          scales: horizontal
+            ? {
+                x: { beginAtZero: true, grace: '12%', ticks: { color: '#dddddd' }, grid: { color: '#222' } },
+                y: { ticks: { color: '#dddddd', font: { size: 12 }, autoSkip: false }, grid: { color: '#1c1c1c' } }
+              }
+            : {
+                x: { ticks: { color: '#dddddd', font: { size: 12 }, autoSkip: false,
+                              maxRotation: 60, minRotation: 30 }, grid: { color: '#1c1c1c' } },
+                y: { beginAtZero: true, grace: '12%', ticks: { color: '#dddddd' }, grid: { color: '#222' } }
+              }
+        }
+      };
+      if (chart) chart.destroy();
+      chart = new Chart(document.getElementById('chart'), cfg);
+    }
+
+    // Variant of the shared value-label plugin that positions text correctly
+    // for both vertical and horizontal bars.
+    GLGC.valueLabels = {
+      id: 'valueLabels',
+      afterDatasetsDraw: function (chart) {
+        var ctx = chart.ctx;
+        var horiz = chart.options.indexAxis === 'y';
+        ctx.save();
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = horiz ? 'left' : 'center';
+        ctx.textBaseline = horiz ? 'middle' : 'bottom';
+        chart.data.datasets.forEach(function (ds, di) {
+          var meta = chart.getDatasetMeta(di);
+          if (meta.hidden) return;
+          meta.data.forEach(function (bar, i) {
+            var v = ds.data[i];
+            if (v == null) return;
+            if (horiz) ctx.fillText(v, bar.x + 6, bar.y);
+            else ctx.fillText(v, bar.x, bar.y - 4);
+          });
+        });
+        ctx.restore();
+      }
+    };
+  </script>
+</body>
+</html>
